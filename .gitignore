@@ -30,6 +30,7 @@ logs/
 *.zip
 
 # Data
+data/
 *.parquet
 
 # IntelliJ and VSCode project
