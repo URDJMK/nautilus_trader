@@ -7,6 +7,7 @@ This guide outlines the process for creating high-performance Cython indicators 
 - Python installed (via Homebrew recommended)
 - C Compiler (Xcode Command Line Tools on macOS)
 - `cython` and `numpy` installed in your environment
+- `uv` for dependency management and running commands
 
 ## Step 1: Create the Source `.pyx` File
 
@@ -71,26 +72,6 @@ cdef class MyIndicator(Indicator):
 > If you define a field (e.g., `period`, `value`) in the `.pxd` file, **DO NOT** declare it again in the `.pyx` file using `cdef`.
 > The `.pxd` acts as the header; redeclaring it in the `.pyx` will cause a compilation error: *"C attributes cannot be added in implementation part of extension type defined in a pxd"*.
 
-## Step 2.5: Implement Tick Handlers (Critical for Real-Time)
-
-To ensure your indicator updates **intra-bar** (on every price tick), you must implement these callback methods in your `.pyx` file:
-
-```python
-from nautilus_trader.model.data cimport QuoteTick, TradeTick
-from nautilus_trader.model.objects cimport Price
-
-    cpdef void handle_quote_tick(self, QuoteTick tick):
-        cdef double bid = Price.raw_to_f64_c(tick._mem.bid_price.raw)
-        cdef double ask = Price.raw_to_f64_c(tick._mem.ask_price.raw)
-        cdef double mid = (ask + bid) / 2.0
-        self.update_raw(mid)
-
-    cpdef void handle_trade_tick(self, TradeTick tick):
-        cdef double price = Price.raw_to_f64_c(tick._mem.price.raw)
-        self.update_raw(price)
-```
-**Warning**: Ensure you keep specific imports like `Bar` if you use them! Don't accidentally remove imports when adding new ones.
-
 ## Step 3: Register the Indicator
 
 Add your indicator to `my_trading/indicators/__init__.py` so it can be imported easily.
@@ -105,53 +86,48 @@ except ImportError:
 __all__ = ["MyIndicator"]
 ```
 
-## Step 4: Compile
+## Step 4: Compile & Build
 
-You **MUST** compile the code for Python to see the changes. We have configured `setup.py` to automatically find your new `.pyx` file.
+We use `setup.py` configured to compile clean artifacts.
 
-Run this command from the project root (`nautilus_trader/`):
+### Key `setup.py` Configurations
+- **Parallel Compilation**: Uses `if __name__ == "__main__":` to allow `nthreads=4`. **Critical for macOS/multiprocessing**.
+- **Clean Artifacts**: Output is directed to `build/` (intermediate files in `build/src`, libraries in `build/lib`).
+- **Package Isolation**: `find_packages(include=["my_trading"])` prevents accidental inclusion of the root directory.
+
+### Running the Build
+Run via `run_tests_safe.py` (easiest) or manually:
 
 ```bash
-# If using uv/venv, ensure you activate it first
-source .venv/bin/activate
+# Using the helper script (Compiles + Tests)
+uv run python my_trading/run_tests_safe.py
 
-python my_trading/setup.py build_ext --inplace
+# Manual Build (if needed)
+uv run python my_trading/setup.py build
 ```
 
-*   **Success**: You will see compilation output and a `.so` file generated in the indicators folder.
-*   **Failure**: Check the error message. Common issues include syntax errors in `.pyx` or missing imports.
+## Step 5: Testing
 
-## Step 5: Test Your Indicator
+Testing compiled extensions requires specific care to avoid importing the "empty" source directory instead of the compiled package.
 
-Create a test file in `my_trading/tests/` (e.g., `test_my_indicator.py`) to verify behavior.
+### Best Practices (Learnings)
+1.  **Use `--pyargs`**: Run pytest with `pytest --pyargs my_trading`. This forces pytest to import the package (finding the compiled version in `build/lib`) rather than looking at the local file system.
+2.  **Clean `sys.path`**: Ensure the current working directory is **removed** from `sys.path` in your test runner to prevent shadowing the installed/compiled package.
+3.  **Partial Data (HMA)**: When implementing complex indicators like HMA (WMA of WMA), ensure your initialization logic handles partial windows correctly (e.g., slicing weights to match available data `weights[-len(data):]`) to avoid shape mismatches during the first few bars.
 
-**Example Test:**
-```python
-from my_trading.indicators import MyIndicator
-from nautilus_trader.test_kit.stubs.data import TestDataStubs
-import pytest
+### Running Tests
+Use the safe runner which handles `sys.path` and `--pyargs` for you:
 
-class TestMyIndicator:
-    def test_initialization(self):
-        ind = MyIndicator(period=10)
-        assert ind.period == 10
-        assert not ind.initialized
-
-    def test_calculation(self):
-        ind = MyIndicator(period=10)
-        # Feed data
-        ind.update_raw(100.0)
-        assert ind.value == 100.0
-```
-
-Run the tests:
 ```bash
-pytest my_trading/tests/test_my_indicator.py
+uv run python my_trading/run_tests_safe.py
 ```
+
+## Implementation Tips
+- **HMA Initialization**: If you have nested indicators dependent on window size (like HMA), use `np.average(..., axis=0)` and carefully match array shapes during the warm-up phase.
+- **Debug Prints**: You can use `print()` in Cython, but ensure you access C-array shapes via `shape[0]` (e.g. `arr.shape[0]`) as `shape` alone returns a C-tuple/pointer not directly printable as a Python object in some contexts.
 
 ## Summary Checklist
-- [ ] Created `.pyx` file
-- [ ] (Optional) Created `.pxd` file
+- [ ] Created `.pyx` file (and optional `.pxd`)
 - [ ] Added to `__init__.py`
-- [ ] **Ran compilation command** (`python setup.py build_ext --inplace`)
-- [ ] Wrote and ran tests
+- [ ] **Ran safe runner** (`uv run python my_trading/run_tests_safe.py`)
+- [ ] Verified tests passed

@@ -48,13 +48,16 @@ def main():
     # importing uncompiled 'nautilus_trader' from source
     cwd = os.getcwd()
     if cwd in sys.path:
-        sys.path.remove(cwd)
-        print(f"Removed CWD {cwd} from sys.path to avoid shadowing installed packages.")
+        # sys.path.remove(cwd)
+        # print(f"Removed CWD {cwd} from sys.path to avoid shadowing installed packages.")
+        pass
 
     # Verify we are importing the INSTALLED nautilus_trader
     try:
         import nautilus_trader
-        print(f"Imported nautilus_trader from: {os.path.dirname(nautilus_trader.__file__)}")
+        print(f"Imported nautilus_trader: {nautilus_trader}")
+        if hasattr(nautilus_trader, "__file__") and nautilus_trader.__file__:
+             print(f"Location: {os.path.dirname(nautilus_trader.__file__)}")
     except ImportError as e:
         print(f"Failed to import nautilus_trader: {e}")
         # If we fail, it might be because we removed CWD but site-packages wasn't in path?
