@@ -50,6 +50,13 @@ htmlcov/
 # Python related
 *.pyc
 *.pyd
+.# Build artifacts
+build/
+*.so
+*.cpp
+*.html
+*.c
+*.o
 .history*
 .cache/
 .codspeed/

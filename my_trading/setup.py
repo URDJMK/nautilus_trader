@@ -35,17 +35,28 @@ def find_extensions(directory="my_trading"):
     return extensions
 
 # Find/Register all extensions automatically
-extensions = find_extensions("my_trading")
+if __name__ == "__main__":
+    extensions = find_extensions("my_trading")
 
-setup(
-    name="my_trading",
-    version="0.1.0",
-    packages=find_packages(),
-    ext_modules=cythonize(
-        extensions, 
-        language_level=3,
-        annotate=True,  # Generates the HTML report (white/yellow lines) for performance checking
-        nthreads=4,      # Parallel compilation
-    ),
-    zip_safe=False,
-)
+    setup(
+        name="my_trading",
+        version="0.1.0",
+        packages=find_packages(include=["my_trading", "my_trading.*"]),
+        # Use 'build/src' for intermediate files (.cpp, .html)
+        # The .so files will go to build/lib via command line args (or default build behavior)
+        ext_modules=cythonize(
+            extensions,
+            compiler_directives={
+                "language_level": "3",
+                "boundscheck": False,
+                "wraparound": False,
+                "initializedcheck": False,
+                "nonecheck": False,
+                "cdivision": True,
+            },
+            annotate=True,   # Generates HTML
+            nthreads=4,      
+            build_dir="build/src", # Output .cpp and .html here
+        ),
+        zip_safe=False,
+    )
